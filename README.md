@@ -8,11 +8,11 @@ A versão do Python utilizada neste exemplo foi a 2.7. A versão pode ser baixad
 ## 2- Instalar o PIP
 Instalar o pip para aquisição da biblioteca necessárias para o exemplo. A instalação pode ser feita seguindo o passo à passo deste [link](https://pip.pypa.io/en/stable/installing/)
 
-## 3- Instalar o BerkelyDB
-Instalar o BerkleyDB para utilização do OpenLDAP. A instalação pode ser feita seguindo [este tutorial](https://geeksww.com/tutorials/database_management_systems/berkeleydb/installation/installing_berkeleydb_on_ubuntu_linux.php)
+## 3- Intalar o OpenLDAP
+[OpenLDAP - Windows](https://www.userbooster.de/en/download/openldap-for-windows.aspx)
 
-## 4- Intalar o OpenLDAP
-Instale o [OpenLDAP](https://www.openldap.org/doc/admin24/quickstart.html)
+## 4- Instalar a biblioteca python-ldap
+[Link](https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyldap) utilizado para instalação
 
 ## 5- Instalar a biblioteca do Google para integração com Python
 A instalação pode ser feita através do pip:
