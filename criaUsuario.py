@@ -1,3 +1,4 @@
+
 import csv
 import ldap
 import ldap.modlist as modlist
@@ -16,33 +17,24 @@ from apiclient import errors
 
 from random import choice
 
-try:
-   import argparse
-   flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
-except ImportError:
-   flags = None
-
 SCOPES = 'https://www.googleapis.com/auth/gmail.send'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'Gmail API Python CriaUsuario'
+APPLICATION_NAME = 'Geracao de usuario OpenLDAP'
 
 def get_credentials():
     home_dir = os.path.expanduser('~')
     credential_dir = os.path.join(home_dir, '.credentials')
     if not os.path.exists(credential_dir):
         os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,'gmail-cria-usuario1.json')
+    credential_path = os.path.join(credential_dir,'geracao-usuario-openldap.json')
 
     store = Storage(credential_path)
     credentials = store.get()
     if not credentials or credentials.invalid:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
         flow.user_agent = APPLICATION_NAME
-        if flags:
-            credentials = tools.run_flow(flow, store, flags)
-        else: # Needed only for compatibility with Python 2.6
-            credentials = tools.run(flow, store)
-        print('Storing credentials to ' + credential_path)
+        credentials = tools.run_flow(flow, store)
+        print('Armazenando credenciais ' + credential_path)
     return credentials
 
 
@@ -67,70 +59,89 @@ def send_message(service, user_id, message):
                .execute())
     return message
   except errors.HttpError, error:
-    print 'An error occurred: %s' % error
+    print 'Ocorreu um erro: %s' % error
 
 def main():
 
-   documento = 'usuario_2.csv'
+   documento = 'usuarios.csv'
+
    #LDAP server configs
    server = "ldap://localhost:389"
    username = 'cn=Manager,dc=example,dc=com'
    password = 'secret'
-   base_dn = "dc=example,dc=com"
+   dn_base = "dc=example,dc=com"
 
    #Gmail configs
    sender = 'pedro.goncalves@mercadobackoffice.com'
    subject = 'Novo usuario'
    user_id = 'me'
 
-   with open(documento, 'rb') as ficheiro:
-      reader = csv.reader(ficheiro, delimiter=';')
+   #Parametros de conexao
+   connection_string = {
+      'user': 'root',
+      'password': '',
+      'host': '127.0.0.1',
+      'database': 'testeInternalSistem',
+      'port': '3306'
+   }
 
-      credentials = get_credentials()
-      http = credentials.authorize(httplib2.Http())
-      service = discovery.build('gmail', 'v1', http=http)
+   print('Abrindo arquivo')
+   if sum(1 for line in open(documento)) == 0:
+      print('Nenhuma linha encontrada no arquivo')
+   else:
+      with open(documento, 'rb') as ficheiro:
+         reader = csv.reader(ficheiro, delimiter=';')
+         
+         print('Lendo linhas')
+         cnx = mysql.connector.connect(**connection_string)
+         cursor = cnx.cursor()
 
-      cnx = mysql.connector.connect(user='root', password='',host='127.0.0.1',database='testeInternalSistem')
-      cursor = cnx.cursor()
+         for linha in reader:
+            print(linha)
+            try:
+               usuario = linha[0] + "." + linha[1]
+               senha = novaSenha()
+               dn = "cn=" + usuario + "," + dn_base
 
-      for linha in reader:
-         print linha
-         try:
-            usuario = linha[0] + "." + linha[1]
-            senha = novaSenha()
-            dn = "cn=" + usuario + "," + base_dn
+               attrs = {}
+               attrs['objectclass'] = ['top','person']
+               attrs['cn'] = usuario
+               attrs['description'] = 'usuario1'
+               attrs['sn'] = linha[1]
+               attrs['userPassword'] = hashlib.md5(senha).hexdigest()
 
-            attrs = {}
-            #attrs['objectclass'] = ['top','person','organizationalPerson', 'user']
-            attrs['objectclass'] = ['top','person']
-            attrs['cn'] = usuario
-            attrs['description'] = 'usuario1'
-            attrs['sn'] = linha[1]
-            attrs['userPassword'] = hashlib.md5(senha).hexdigest()
+               print('Criando registro LDAP')
+               l = ldap.initialize(server)
+               l.protocol_version = ldap.VERSION3
+               l.bind_s(username, password)
+               ldif = modlist.addModlist(attrs)
 
-            l = ldap.initialize(server)
-            l.protocol_version = ldap.VERSION3
-            l.bind_s(username, password)
-            ldif = modlist.addModlist(attrs)
+               l.add_s(dn, ldif)
 
-            l.add_s(dn, ldif)
+               l.unbind()
+               print('Registro LDAP criado. Usuario: ' + usuario)
 
-            l.unbind()
+               print('Preparando envio de email')
+               credentials = get_credentials()
+               http = credentials.authorize(httplib2.Http())
+               service = discovery.build('gmail', 'v1', http=http)
 
-            msg_txt = "Seu usuario e '" + usuario + "' e sua senha: '" + senha + "'"
-            msg = create_message(sender, linha[2], subject, msg_txt)
-            send_message(service, user_id, msg)
+               msg_txt = "Seu usuario e '" + usuario + "' e sua senha '" + senha + "'"
+               msg = create_message(sender, linha[2], subject, msg_txt)
+               send_message(service, user_id, msg)
+               print('Email enviado')
 
-            cursor.execute("INSERT INTO usuario (nome, sobrenome, usuario, senha, estado) values (%s, %s, %s, %s, %s)", (linha[0], linha[1], usuario,attrs['userPassword'], True))
+               print('Salvando usuario no banco de dados')
+               insert_clause = "INSERT INTO usuario (nome, sobrenome, usuario, senha, estado) values (%s, %s, %s, %s, %s)"
+               values = (linha[0], linha[1], usuario,attrs['userPassword'], True)
+               cursor.execute(insert_clause, values)
+               print('Usuario salvo')
+            except ldap.LDAPError, e:
+               print e
 
-            print 'Usuario incluido: ' + usuario + ' e email enviado'
-
-         except ldap.LDAPError, e:
-            print e
-
-      cnx.commit()
-      cursor.close()
-      cnx.close()
+         cnx.commit()
+         cursor.close()
+         cnx.close()
 
 if __name__ == '__main__':
     main()
