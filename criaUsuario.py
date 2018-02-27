@@ -37,6 +37,23 @@ def get_credentials():
         print('Armazenando credenciais ' + credential_path)
     return credentials
 
+def get_ldap_connection(server, username, password):
+   l = ldap.initialize(server)
+   l.protocol_version = ldap.VERSION3
+   l.bind_s(username, password)
+   return l
+
+def add_user(connection, dn, attrs):
+   ldif = modlist.addModlist(attrs)
+   connection.add_s(dn, ldif)
+
+def get_ldap_user(connection, base_dn, searchScope, searchFilter):
+   return connection.search_s(base_dn, searchScope, searchFilter)
+
+def get_service():
+   credentials = get_credentials()
+   http = credentials.authorize(httplib2.Http())
+   return discovery.build('gmail', 'v1', http=http)
 
 def novaSenha():
    caracters = '0123456789abcdefghijlmnopqrstuwvxz'
@@ -111,31 +128,27 @@ def main():
                attrs['userPassword'] = hashlib.md5(senha).hexdigest()
 
                print('Criando registro LDAP')
-               l = ldap.initialize(server)
-               l.protocol_version = ldap.VERSION3
-               l.bind_s(username, password)
-               ldif = modlist.addModlist(attrs)
-
-               l.add_s(dn, ldif)
-
-               l.unbind()
+               cx = get_ldap_connection(server, username, password)
+               add_user(cx, dn, attrs)
                print('Registro LDAP criado. Usuario: ' + usuario)
 
-               print('Preparando envio de email')
-               credentials = get_credentials()
-               http = credentials.authorize(httplib2.Http())
-               service = discovery.build('gmail', 'v1', http=http)
-
-               msg_txt = "Seu usuario e '" + usuario + "' e sua senha '" + senha + "'"
-               msg = create_message(sender, linha[2], subject, msg_txt)
-               send_message(service, user_id, msg)
-               print('Email enviado')
+               '''
+               filtro = 'cn=' + usuario
+               print(get_ldap_user(cx, dn_base, ldap.SCOPE_SUBTREE, filtro))
+               '''
+               cx.unbind()
 
                print('Salvando usuario no banco de dados')
                insert_clause = "INSERT INTO usuario (nome, sobrenome, usuario, senha, estado) values (%s, %s, %s, %s, %s)"
                values = (linha[0], linha[1], usuario,attrs['userPassword'], True)
                cursor.execute(insert_clause, values)
                print('Usuario salvo')
+
+               print('Preparando envio de email')
+               msg_txt = "Seu usuario e '" + usuario + "' e sua senha '" + senha + "'"
+               send_message(get_service(), user_id, create_message(sender, linha[2], subject, msg_txt))
+               print('Email enviado')
+
             except ldap.LDAPError, e:
                print e
 
